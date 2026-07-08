@@ -28,10 +28,9 @@ def _find_bundled_2026():
 
 st.set_page_config(page_title="WUM matura percentile", layout="wide")
 st.title("WUM recruitment percentile — CKE 2025 & 2026 data")
-st.caption("Standalone module (unrelated to the DCF/screening pipeline). Estimates where a "
-           "candidate's extended-level index (chemia + biologia + matematyka/fizyka, "
-           "1% = 1 pt, max 300) ranks — in 2025, and in 2026 (official results, with a "
-           "what-if model option).")
+st.caption("Estimates where a candidate's WUM recruitment index (chemia + biologia + "
+           "matematyka/fizyka, extended level, 1% = 1 pt, max 300) ranks among Polish "
+           "maturzyści — from official CKE data for 2025 and 2026 (with a what-if model option).")
 
 d2025 = load_2025()
 bundled_2026 = _find_bundled_2026()
