@@ -31,6 +31,11 @@ st.title("WUM recruitment percentile — CKE 2025 & 2026 data")
 st.caption("Estimates where a candidate's WUM recruitment index (chemia + biologia + "
            "matematyka/fizyka, extended level, 1% = 1 pt, max 300) ranks among Polish "
            "maturzyści — from official CKE data for 2025 and 2026 (with a what-if model option).")
+_REPO = "https://github.com/pkiszk/wum-matura-app"
+st.markdown(
+    f"📖 **[Full methodology & sources]({_REPO}/blob/main/METHODOLOGY.md)** · "
+    f"[README]({_REPO}/blob/main/README.md) · [source code]({_REPO}) — "
+    "every number here is reproducible and sourced (see also the expander at the bottom).")
 
 d2025 = load_2025()
 bundled_2026 = _find_bundled_2026()
@@ -256,6 +261,17 @@ st.line_chart(chart_df)
 st.caption(f"Candidate index = {idx}. 2025 pool mean "
            f"{an25.joint.index_samples.mean():.0f}; {year_label} mean "
            f"{an26.joint.index_samples.mean():.0f} (max 300).")
+
+# ---------------- full methodology (rendered inline) ----------------------
+_doc = pathlib.Path(__file__).resolve().parent / "METHODOLOGY.md"
+with st.expander("📖 Full methodology — sources, formulas, assumptions (read in-app)"):
+    if _doc.exists():
+        st.caption(f"Rendered from METHODOLOGY.md in the repo · "
+                   f"[open on GitHub]({_REPO}/blob/main/METHODOLOGY.md)")
+        st.markdown(_doc.read_text(encoding="utf-8"))
+    else:
+        st.markdown(f"See the full methodology on "
+                    f"[GitHub]({_REPO}/blob/main/METHODOLOGY.md).")
 
 # ---------------- centyle / stanine reference -----------------------------
 with st.expander("Official CKE percentile data (the curves we build on)"):
