@@ -5,8 +5,6 @@ A complete, verifiable account of how this module turns published CKE 2025 data 
 admission cut-off. Every number below is reproducible from the commands in §10, and every
 input is traceable to an official source in §1. Nothing here is a black box.
 
-Scope note: this module is standalone and unrelated to the rest of the AICF (DCF/investing)
-project. It shares only `numpy`.
 
 ---
 
@@ -97,18 +95,25 @@ The **cumulative** fraction at each upper bound is the running sum of the bands:
     cum = [0.04, 0.11, 0.23, 0.40, 0.60, 0.77, 0.89, 0.96, 1.00]
 
 ### 1c. Cohort sizes (for pool & cut-off)
-User-supplied official 2026 figures (extended-level counts):
+Official CKE extended-level counts, **this-year graduates** — the *same basis for both
+years* (§1a for 2025; *Wstępne informacje EM26* Tabela 2 for 2026), so growth is like-for-like:
 
-| Subject (R) | 2025 | 2026 | change |
+| Subject (R) | 2025 N | 2026 N | change |
 |---|---:|---:|---:|
-| matematyka | 71 000 | 93 000 | +31% |
-| biologia   | 44 400 | 71 000 | +60% |
-| chemia     | 21 200 | 33 000 | **+56%** |
+| matematyka | 67 384 | 88 856 | +32% |
+| biologia   | 41 718 | 67 312 | +61% |
+| chemia     | 20 340 | 31 691 | **+56%** |
+| fizyka     | 13 961 | 19 364 | +39% |
 
 Overall matura cohort grew ~+30%; the med-binding **chemia** cohort grew **+56%** (see §6).
-(These broad counts differ slightly from §1a's "this-year graduates" N — e.g. chemia
-21 200 vs 20 340 — because they include repeat/adult takers. For pool sizing the broader
-count is the right basis; for distribution shape we use §1a/§1b.)
+
+> **One basis, on purpose.** Growth is only meaningful like-for-like. We use the CKE
+> **this-year-graduate** count for *both* years and for *both* pool sizing and distribution
+> shape — 20 340 → 31 691 = **+56%**. Do **not** mix bases: pairing the older *broad*
+> cohort figure for 2025 (≈21 200, which also counts repeat/adult takers) with the 2026
+> this-year-graduate count (31 691) wrongly reads **+49%**. (The broad basis is internally
+> consistent too — ≈21 200 → ≈33 000 is also +56% — but we standardise on the this-year
+> count because it is the number actually in the data files, from one source definition.)
 
 ---
 
@@ -253,7 +258,7 @@ Given `N` simulated indices and the candidate index `v = 245`:
 
 **2025 result (default model — centyle marginals §1b', med-pool third §2b, Student-t ν=6 §3,
 max-third §3a):** index mean ≈ 150, median ≈ 150, SD ≈ 63, p99 ≈ 282; **245 → 93.2%**;
-rivals above ≈ 1 439 in a 21 200 pool. The stronger field (med-pool third + best-of-two +
+rivals above ≈ 1 380 in a 20 340 pool. The stronger field (med-pool third + best-of-two +
 tail dependence) pulls this below the old raw-national-and-Gaussian figure of 96.3% — that
 number overstated the candidate, which is exactly what this revision corrects.
 
@@ -320,16 +325,19 @@ curves are densities (area = 1), so lower-on-the-right ⇔ higher-on-the-left.
 ## 6. Applicant pool (why chemia, why +56%)
 
 The index requires chemia **and** biologia **and** (math|physics), so the number of people
-who can be in the competition is capped by the **smallest** cohort — **chemia** (33 000 <
-71 000 bio < 93 000 math in 2026). Nearly everyone taking chemia-R is on the med track and
+who can be in the competition is capped by the **smallest** cohort — **chemia** (31 691 <
+67 312 bio < 88 856 math in 2026). Nearly everyone taking chemia-R is on the med track and
 also takes bio-R, so **chemia cohort ≈ med-applicant pool**. Therefore:
 
-- `pool_2025 = 21 200`, `pool_2026 = 33 000` → **pool growth = +56%** (not the +30% overall).
+- `pool_2025 = 20 340`, `pool_2026 = 31 691` (both CKE this-year-graduate counts, §1c) →
+  **pool growth = +56%** (not the +30% overall). Keep both years on this one basis — mixing
+  in the older broad 2025 figure (≈21 200) understates growth to +49% (§1c).
 - Percentile (§4) is **scale-free** — pool size does not affect it. Pool only scales
   **absolute counts** (rivals, and the cut-off headcount in §7).
 
-Consequence: with the real +56%, rivals-above **rises** 775 → 893 even though the percentile
-improves — more people, but weaker. Both facts are true; they answer different questions.
+Consequence: rivals-above are ≈ **1 380 (2025)** → **1 311 (2026)** — a slight *fall*, because
+the ~+56% more people are offset by the weaker + med-corrected field. Percentile still
+improves (93.2% → 95.9%). Both facts are true; they answer different questions.
 
 ---
 
@@ -351,14 +359,16 @@ the score at that same headcount in the 2026 distribution. Code: `wum.project_cu
     weakening_effect = cut_2026 − cut_poolonly                   # (−) weaker field
     net              = cut_2026 − cut_base = pool_effect + weakening_effect
 
-**Worked result** (cut_base = 221, pool 21 200→33 000, means bio −5 / chem −2, seats_growth 0):
+**Worked result** (default model on real 2026 data; cut_base = 221, pool 20 340→31 691,
+seats_growth 0):
 
-    frac_base ≈ 8.1%  → seats ≈ 1 713
-    admit_2026 ≈ 5.2%
-    pool_effect ≈ +15 ,  weakening_effect ≈ −7  →  cut_2026 ≈ 229  (net +8)
+    frac_base ≈ 14.7%  → seats ≈ 2 990
+    admit_2026 ≈ 9.4%
+    pool_effect ≈ +15 ,  weakening_effect ≈ −13  →  cut_2026 ≈ 223  (net +2)
 
-The +56% pool growth **dominates** the weakening, so the próg **rises**. Candidate 245 clears
-221 by +24 and the projected 229 by +16. Sensitivity: seats +10%/+20% → cut ≈ 226 / 223.
+The +56% pool growth and the weaker + med-corrected field **nearly cancel**, so the próg
+barely moves. Candidate 245 clears 221 by +24 and the projected 223 by +22. Sensitivity:
+seats +10%/+20% → cut ≈ 220 / 218 (more seats can only lower the cut).
 
 **Assumption:** the share of chemia-takers competing for *this specific programme* is stable
 year-over-year, and seats are fixed unless you set `seats_growth`. The robust part is the
@@ -384,8 +394,10 @@ real 2026 data.
 3. **2026 shape = 2025 shape shifted** (§5, what-if model only) — center moves, spread does
    not; boundary clipping is approximate.
 4. **Whole-percent source data** — CKE rounds; sub-percent precision is not available.
-5. **Cohort vs graduates** — pool uses broad cohort counts (§1c); distribution shape uses
-   this-year-graduate parameters (§1a/§1b). Documented, not hidden.
+5. **One cohort basis** — pool sizing and distribution shape both use the CKE
+   **this-year-graduate** counts (§1c), the same basis for 2025 and 2026, so growth is
+   like-for-like (+56%). Do not mix in the older broad 2025 count (that reads a spurious
+   +49%). Documented, not hidden.
 6. **Monte-Carlo noise** — ~±0.1–0.3 pt on percentiles at N=200k; increase N to tighten.
 
 ---
@@ -407,7 +419,7 @@ real 2026 data.
 
 ```bash
 # Full report: per-subject %ile, 2025 & 2026 index %ile, rivals, cut-off projection
-python3 src/matura/report.py --pool 21200 --pool2026 33000 --cut2025 221
+python3 src/matura/report.py --pool 20340 --pool2026 31691 --cut2025 221
 
 # Acceptance tests must print ALL PASS
 python3 src/matura/test_matura.py
@@ -460,10 +472,11 @@ Independent cross-checks you can run without this code:
 | matematyka 72 → percentile **(med-pool)** | **80.7%** | **76.0%** |
 | matematyka 72 → percentile (raw national centyle, for contrast) | 91.0% | 87.0% |
 | **index 245 → percentile** | **93.2%** | **95.9%** |
-| rivals scoring above 245 | ~1 439 (pool 21 200) | ~1 311 (pool 31 691) |
-| admission cut-off (próg) | 221 (given) | **~222 (+1)** |
+| rivals scoring above 245 | ~1 380 (pool 20 340) | ~1 311 (pool 31 691) |
+| admission cut-off (próg) | 221 (given) | **~223 (+2)** |
 
-Cut-off decomposition (real data): pool growth **+14**, weakening **−13**, net **+1**.
+Both pools are CKE **this-year-graduate** chemia counts (§1c), so growth is a clean **+56%**.
+Cut-off decomposition (real data): pool growth **+15**, weakening **−13**, net **+2**.
 
 **What changed, and why.** Four corrections separate this from the original raw-national /
 single-third / Gaussian / stanine model (which read index 245 → 96.3% / 97.3%):
@@ -477,5 +490,5 @@ single-third / Gaussian / stanine model (which read index 245 → 96.3% / 97.3%)
 
 Net: the index sits at **93.2% (2025) / 95.9% (2026)** — a **top-5-to-7%** band, below the
 old top-3% figure the coarser/overstated model produced. The candidate still clears the
-projected 2026 cut-off (~222) comfortably by **+23**. All figures reproduce from
+projected 2026 cut-off (~223) comfortably by **+22**. All figures reproduce from
 `report.py … --data2026 data/matura/2026.json` and are locked by `test_matura.py`.

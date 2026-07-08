@@ -167,9 +167,9 @@ def test_student_t_upper_tail_monotone_in_nu():
     # projected 2026 cut-off inherits the tail: heavier tail (low nu) => higher cut
     d26 = load_year(_find_2026())
     def cut(nu):
-        a25 = analyse_year(d, cand, pool=21200, n=200_000, nu=nu)
+        a25 = analyse_year(d, cand, pool=20340, n=200_000, nu=nu)
         a26 = analyse_year(d26, cand, pool=31691, n=200_000, nu=nu)
-        return project_cutoff(a25, a26, cut_base=221, pool_base=21200, pool_target=31691)["cut_target"]
+        return project_cutoff(a25, a26, cut_base=221, pool_base=20340, pool_target=31691)["cut_target"]
     c_lo, c_hi = cut(3), cut(None)
     check("projected cut-off higher under heavy tails (nu=3 >= Gaussian)",
           c_lo >= c_hi - 1e-6, f"nu3={c_lo:.2f} gauss={c_hi:.2f}")
@@ -208,12 +208,12 @@ def test_2026_weaker_raises_percentile():
 
 def test_cutoff_projection():
     d = load_2025(); cand = default_candidate()
-    an25 = analyse_year(d, cand, pool=21200, n=200_000)
+    an25 = analyse_year(d, cand, pool=20340, n=200_000)
     shifts, _ = build_2026(d, means_2026={"biologia": 41, "chemia": 41}, growth=0.0)
-    an26 = analyse_year(d, cand, shifts=shifts, pool=33000, n=200_000)
-    p = project_cutoff(an25, an26, cut_base=221, pool_base=21200, pool_target=33000)
+    an26 = analyse_year(d, cand, shifts=shifts, pool=31691, n=200_000)
+    p = project_cutoff(an25, an26, cut_base=221, pool_base=20340, pool_target=31691)
     # identity: base==target dist & pool must reproduce the same cut-off
-    same = project_cutoff(an25, an25, cut_base=221, pool_base=21200, pool_target=21200)
+    same = project_cutoff(an25, an25, cut_base=221, pool_base=20340, pool_target=20340)
     check("no-change projection reproduces cut (~221)", abs(same["cut_target"] - 221) <= 2,
           f"{same['cut_target']:.1f}")
     # decomposition must add up to net
@@ -226,7 +226,7 @@ def test_cutoff_projection():
           p["pool_effect"] > 0 and p["weakening_effect"] < 0,
           f"pool={p['pool_effect']:.1f} weak={p['weakening_effect']:.1f}")
     # more seats can only lower (or hold) the cut-off
-    p_more = project_cutoff(an25, an26, cut_base=221, pool_base=21200, pool_target=33000,
+    p_more = project_cutoff(an25, an26, cut_base=221, pool_base=20340, pool_target=31691,
                             seats_growth=0.20)
     check("more seats -> cut-off not higher", p_more["cut_target"] <= p["cut_target"] + 1e-6,
           f"{p_more['cut_target']:.1f} vs {p['cut_target']:.1f}")

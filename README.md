@@ -63,7 +63,8 @@ chem/bio percentiles are read straight off CKE's published centyle curve. matema
 national* centyle percentile (91 % / 87 %) is shown in the app for contrast; the med-pool
 figures above are the correct reference for a med applicant. The index percentile sits below
 the old raw-national-Gaussian-stanine headline (96.3 % / 97.3 %) — that number overstated the
-candidate. Rivals scoring higher: 2025 ≈ 1 439 (pool 21 200) → 2026 ≈ 1 311 (pool 31 691).
+candidate. Rivals scoring higher: 2025 ≈ 1 380 (pool 20 340) → 2026 ≈ 1 311 (pool 31 691) —
+both pools are CKE **this-year-graduate** chemia counts, so growth is a clean **+56%**.
 
 **Caveat, stated everywhere:** the third subject is med-pool-corrected, but **chemia &
 biologia are still ranked vs all national extended-level takers** — they are already
@@ -76,20 +77,20 @@ A cut-off is the score of the last admitted candidate, so #(applicants ≥ cut) 
 Given the 2025 cut-off, we hold seats fixed and read the score at that same headcount in
 the larger/weaker 2026 distribution — separating two opposing forces: a bigger pool pushes
 the cut UP, a weaker field pulls it DOWN. Worked example (2025 cut = 221, chemia pool
-21,200→31,691, real 2026 data):
+**20,340→31,691** = +56%, same this-year-graduate basis both years, real 2026 data):
 
-    pool-growth effect +15,  weakening effect −14  →  projected 2026 cut ≈ 222 (+1)
+    pool-growth effect +15,  weakening effect −13  →  projected 2026 cut ≈ 223 (+2)
 
-Under the richer field model the two forces nearly cancel (pool growth still pushes up, but
-the stronger med-pool/best-of-two field weakens more in relative terms), so the cut is
-roughly flat. A 245-pt candidate clears 221 by +24 and the projected 222 by +23.
+Under the richer field model the two forces nearly cancel (pool growth pushes up, the
+stronger med-pool/best-of-two field weakens down), so the cut barely moves. A 245-pt
+candidate clears 221 by +24 and the projected 223 by +22.
 
 ## Run
 ```bash
 python3 src/matura/report.py                       # default candidate + 2026 model
 python3 src/matura/report.py --chem 85 --bio 88 --math 72
 python3 src/matura/report.py --third fizyka --phys 80
-python3 src/matura/report.py --pool 21200 --pool2026 33000 --cut2025 221   # cut-off projection
+python3 src/matura/report.py --pool 20340 --pool2026 31691 --cut2025 221   # cut-off projection
 python3 src/matura/report.py --data2026 data/matura/2026.json   # once real 2026 data exists
 python3 src/matura/test_matura.py                  # acceptance tests → ALL PASS
 streamlit run src/matura/app_matura.py             # stage-2 UI, all inputs editable (port 8502)

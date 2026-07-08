@@ -32,7 +32,9 @@ def main(argv=None):
     ap.add_argument("--third", choices=["matematyka", "fizyka"], default=WUM_THIRD_DEFAULT)
     ap.add_argument("--growth", type=float, default=0.56,
                     help="2026 pool growth vs 2025 = binding CHEMIA cohort growth "
-                         "(21,200->33,000 ~= +56%). NB overall matura cohort grew ~+30%.")
+                         "(20,340->31,691 this-year-graduates ~= +56%). NB overall matura "
+                         "cohort grew ~+30%. (Mixing bases — e.g. 21,200->31,691 — wrongly "
+                         "reads +49%; keep both years on the same CKE count.)")
     ap.add_argument("--bio2026", type=float, default=41.0, help="announced 2026 biologia mean")
     ap.add_argument("--chem2026", type=float, default=41.0, help="announced 2026 chemia mean")
     ap.add_argument("--pool", type=float, default=None, help="override 2025 applicant-pool size")
