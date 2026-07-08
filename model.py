@@ -70,6 +70,21 @@ class Marginal:
         """Inverse CDF: map uniforms u in [0,1] to scores (%)."""
         return np.interp(u, self._c, self._s)
 
+    def mean(self) -> float:
+        """Exact mean of the piecewise-linear empirical distribution.
+
+        Each CDF segment [x_i, x_{i+1}] carries mass (F_{i+1}-F_i) uniformly, so its
+        conditional mean is the midpoint. Mean = Σ mass·midpoint.
+        """
+        x, c = self._s, self._c
+        mass = np.diff(c)
+        mid = (x[:-1] + x[1:]) / 2.0
+        return float(np.sum(mass * mid))
+
+    def median(self) -> float:
+        """Score at the 50th percentile of the empirical curve."""
+        return float(self.quantile(np.array([0.5]))[0])
+
     def sample(self, u: np.ndarray) -> np.ndarray:
         return self.quantile(u)
 
