@@ -1,0 +1,29 @@
+{
+  "year": 2026,
+  "total_graduates": null,
+  "note": "OFFICIAL 2026 extended-level stanine tables. Source: CKE 'Skale staninowe wynikow - egzamin maturalny 2026' (Formula 2023), published 2026-07-08. N = this-year graduates who took the exam at extended level. Means/median/SD are placeholders (fall back to 2025) pending the detailed subject reports ('sprawozdania'); they are display-only and NOT used in the percentile/cut-off math, which reads the stanine curve directly.",
+  "subjects": {
+    "matematyka": {
+      "n": 88856,
+      "stanine_upper": [0, 2, 8, 22, 42, 60, 74, 100, 100],
+      "source": "CKE Skale staninowe EM2026 p.3 (poziom rozszerzony)"
+    },
+    "biologia": {
+      "n": 67312,
+      "mean": 41,
+      "stanine_upper": [8, 12, 18, 28, 43, 58, 72, 82, 100],
+      "source": "CKE Skale staninowe EM2026 p.11 (poziom rozszerzony)"
+    },
+    "chemia": {
+      "n": 31691,
+      "mean": 41,
+      "stanine_upper": [3, 7, 15, 28, 47, 63, 77, 87, 100],
+      "source": "CKE Skale staninowe EM2026 p.11 (poziom rozszerzony)"
+    },
+    "fizyka": {
+      "n": 19364,
+      "stanine_upper": [3, 7, 13, 28, 50, 68, 80, 90, 100],
+      "source": "CKE Skale staninowe EM2026 p.12 (poziom rozszerzony)"
+    }
+  }
+}

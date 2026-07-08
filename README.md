@@ -1,14 +1,24 @@
 # Matura → WUM recruitment percentile (standalone module)
 
 **Unrelated to the DCF/screening pipeline.** Estimates where a Warsaw Medical
-University (WUM) candidate ranks, using official CKE 2025 extended-level ("poziom
-rozszerzony") results, and models a 2026 population that is larger and weaker without
-needing 2026 distributions.
+University (WUM) candidate ranks, using official CKE extended-level ("poziom
+rozszerzony") results for **2025 and 2026**.
+
+> **2026 update (2026-07-08):** the official 2026 stanine curves are now published and
+> ingested ([`../../data/matura/2026.json`](../../data/matura/2026.json)). The app and CLI
+> default to this **real 2026 data**. A blind forecast made *before* any 2026 distribution
+> existed (the "shift-model" below) was then confirmed by the actuals: it predicted the
+> 245-pt candidate at the **97.3rd** percentile and a cut-off of ~229; the real data gives
+> **97.3%** and **~228**. The shift-model remains available as a what-if scenario tool.
 
 ## The question
 WUM ranks on a recruitment index = **chemia R + biologia R + (matematyka R _or_ fizyka R)**,
 each in %, 1% = 1 point → index ∈ [0, 300]. The brief's candidate (matura 2026):
 chemia 85, biologia 88, matematyka 72 → **245 / 300**. Where does 245 sit?
+
+> **Full, verifiable derivation:** see [`METHODOLOGY.md`](METHODOLOGY.md) — formulas,
+> data provenance with source URLs, worked examples, assumptions/limitations, and
+> copy-paste commands to reproduce every number.
 
 ## Method (no black box)
 1. **Marginal per subject.** Each subject's score(%)→percentile curve is the empirical
@@ -22,17 +32,18 @@ chemia 85, biologia 88, matematyka 72 → **245 / 300**. Where does 245 sit?
    publishes no joint. We combine the marginals with a **Gaussian copula** whose
    correlation matrix is an explicit, tunable assumption (bio–chem strong, math weaker).
    Monte-Carlo → the index distribution → the percentile of 245.
-3. **2026 without 2026 data.** Shift each 2025 marginal horizontally by the announced
-   change in its mean (biologia 46→41 ⇒ −5; chemia 43→41 ⇒ −2), clipped to [0,100].
-   This preserves the published shape while reproducing the mean drop — the signature of
-   a larger, weaker cohort. The +30 % cohort growth does not move a percentile (scale-free)
-   but scales the absolute rival count, reported separately.
+3. **2026.** When real 2026 stanine data is present (default), its curves are built the
+   same way as (1) — no model. As a scenario alternative, the **what-if model** shifts each
+   2025 marginal horizontally by an assumed change in its mean (biologia 46→41 ⇒ −5; chemia
+   43→41 ⇒ −2), clipped to [0,100]; this preserves the published shape while reproducing a
+   mean drop — the signature of a larger, weaker cohort. The +56 % chemia-cohort growth does
+   not move a percentile (scale-free) but scales the absolute rival count, reported separately.
 
-## Result (default inputs, official 2025 data)
+## Result (default inputs — official data, real 2026)
 | | chemia 85 | biologia 88 | matematyka 72 | index 245 |
 |---|---|---|---|---|
 | percentile among 2025 R takers | 92.5 % | 96.8 % | 86.6 % | **96.3 %** |
-| percentile in 2026 model (weaker+larger) | | | | **97.3 %** |
+| percentile among **2026** R takers (real) | 94.6 % | 97.3 % | 87.3 % | **97.3 %** |
 
 Rivals scoring higher stay ~flat (2025 ≈ 744 → 2026 ≈ 716 in the chemia-R-sized pool):
 the +30 % cohort is offset by its weakness.

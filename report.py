@@ -124,19 +124,24 @@ def main(argv=None):
               f"over projected 2026 cut {idx-proj['cut_target']:+.0f}")
 
     # ---- takeaway ------------------------------------------------------
+    is_real = bool(a.data2026)
+    kind = "actual 2026 results" if is_real else "2026 model"
     delta = an26.candidate_percentile - an25.candidate_percentile
     print("\n" + "-" * 74)
     print("TAKEAWAY")
     print(f"  A weaker + larger 2026 cohort lifts the same {idx:.0f}-pt score from the "
           f"{_fmt_pct(an25.candidate_percentile)} percentile (2025 pool)")
-    print(f"  to ~{_fmt_pct(an26.candidate_percentile)} (2026 model): "
+    print(f"  to ~{_fmt_pct(an26.candidate_percentile)} ({kind}): "
           f"{delta:+.1f} pts of percentile.")
     print("  CAVEAT: reference pool = ALL extended-level takers nationally, not the "
           "self-selected WUM")
     print("  applicant field (who are stronger) — so real med-competition standing is "
           "somewhat lower.")
-    print("  The 2026 figure is a MODEL (no 2026 distribution published yet); tune "
-          "means/corr/pool to stress it.")
+    if is_real:
+        print(f"  Using OFFICIAL 2026 stanine data ({a.data2026}); no cohort model applied.")
+    else:
+        print("  The 2026 figure is a MODEL (2025 shape shifted by announced means); tune "
+              "means/corr/pool to stress it.")
     print("-" * 74)
     return an25, an26
 
