@@ -175,6 +175,11 @@ index is right-skewed (fatter high tail). Reproduce with the snippet in §10.
 > N=31 691 [3,7,15,28,47,63,77,87,100]; fizyka N=19 364 [3,7,13,28,50,68,80,90,100].
 > Note the *shape* changed, not just the level (e.g. matematyka strengthened mid-range),
 > which a pure mean-shift cannot capture — so real data is strictly preferred where it exists.
+> Official 2026 R means (CKE *Wstępne informacje* Tabela 2, all this-year graduates):
+> matematyka **37** (2025: 33, +4), biologia **41** (46, −5), chemia **41** (43, −2),
+> fizyka **42** (52, −10). These are context only — the percentile/cut-off read the stanine
+> curve directly, never the mean. (Deriving a mean from the coarse 9-point stanine curve
+> runs ~1–2 pts low, so the module now uses these published means for display.)
 
 ### 5a. The what-if model (used when real data is absent)
 

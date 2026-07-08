@@ -14,7 +14,6 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import numpy as np, pandas as pd, streamlit as st
 
 from cke_data import load_2025, load_year, STANINE_BANDS
-from model import Marginal
 from wum import Candidate, analyse_year, build_2026, project_cutoff
 
 
@@ -178,19 +177,19 @@ for s in subjects:
            f"%ile {year_label}": round(an26.candidate_subject_pct[s], 1),
            "2025 mean %": st25.mean}
     if d2026 is not None:
-        m26 = Marginal(d2026.get(s)).mean()
-        row["2026 mean ≈ %"] = round(m26, 1)
-        row["Δ mean"] = round(m26 - st25.mean, 1)
+        st26 = d2026.get(s)
+        row["2026 mean %"] = st26.mean
+        row["Δ mean"] = round(st26.mean - st25.mean, 1)
     row["2025 N (R)"] = st25.n
     if d2026 is not None:
         row["2026 N (R)"] = d2026.get(s).n
     rows.append(row)
 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 if d2026 is not None:
-    st.caption("**2026 mean ≈** is derived from the official 2026 stanine curve (CKE's "
-               "published mean awaits the detailed subject report; the same method reproduces "
-               "the 2025 official means within ~1 pt). Note fizyka fell hardest and matematyka "
-               "rose slightly — a *shape* change a simple mean-shift could not have guessed.")
+    st.caption("Means & N are official CKE 2026 figures (Wstępne informacje EM26, Tabela 2 — "
+               "all this-year graduates). Biggest moves: **fizyka −10** (52→42) and "
+               "**matematyka +4** (33→37); biologia −5, chemia −2. The percentile/cut-off "
+               "read the stanine curve directly, so the mean column is context, not an input.")
 
 # ---------------- index distribution chart --------------------------------
 st.subheader(f"Index distribution: 2025 vs {year_label}")
