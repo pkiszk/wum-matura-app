@@ -343,27 +343,35 @@ improves (93.2% → 95.9%). Both facts are true; they answer different questions
 
 ## 7. Cut-off (próg) projection
 
-A cut-off is the score of the **last admitted** candidate, so
-`#(applicants ≥ cut) = #seats`. We hold seats fixed (they rarely track cohort size) and read
-the score at that same headcount in the 2026 distribution. Code: `wum.project_cutoff`.
+A cut-off is the score of the **last admitted** candidate. We hold the *size of the top group
+that clears the bar* fixed and read the score at that same headcount in the larger 2026
+distribution. Code: `wum.project_cutoff`.
 
-    frac_base   = mean( index_base ≥ cut_base )           # 2025 in-pool admit rate
-    seats       = pool_base · frac_base · (1 + seats_growth)
-    admit_2026  = seats / pool_target                     # lower: same seats, bigger pool
+    frac_base   = mean( index_base ≥ cut_base )           # share of the 2025 pool above the bar
+    top_group   = pool_base · frac_base · (1 + seats_growth)   # internal headcount (see note)
+    admit_2026  = top_group / pool_target                 # falls: same headcount, bigger pool
     cut_2026    = quantile( index_target , 1 − admit_2026 )
+
+> **What `top_group` is — and is not.** It is *not* WUM's literal intake (a few hundred
+> places). It is the headcount of the whole chemia pool scoring ≥ the cut (top ~14.7% ≈
+> 2 990 people) — most of whom apply to several universities, so it is **not** a "seats"
+> figure and is never shown in the app. It is a pure intermediate: it cancels out, because
+> `admit_2026 = frac_base / (1 + growth)` (here 14.7% / 1.56 ≈ 9.4%). Only the **admit rate**
+> and the **pool-growth ratio** drive the projected cut. The `seats_growth` slider models a
+> deliberate change in that headcount (WUM adding/cutting places).
 
 **Decomposition** (two opposing forces):
 
     cut_poolonly     = quantile( index_base , 1 − admit_2026 )   # bigger pool, 2025 shape
-    pool_effect      = cut_poolonly − cut_base                   # (+) more rivals, same seats
+    pool_effect      = cut_poolonly − cut_base                   # (+) more rivals, same headcount
     weakening_effect = cut_2026 − cut_poolonly                   # (−) weaker field
     net              = cut_2026 − cut_base = pool_effect + weakening_effect
 
 **Worked result** (default model on real 2026 data; cut_base = 221, pool 20 340→31 691,
 seats_growth 0):
 
-    frac_base ≈ 14.7%  → seats ≈ 2 990
-    admit_2026 ≈ 9.4%
+    frac_base ≈ 14.7%  (2025 pool share above 221)
+    admit_2026 ≈ 9.4%  (14.7% / 1.56, same top-group headcount over the +56% pool)
     pool_effect ≈ +15 ,  weakening_effect ≈ −13  →  cut_2026 ≈ 223  (net +2)
 
 The +56% pool growth and the weaker + med-corrected field **nearly cancel**, so the próg

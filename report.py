@@ -141,9 +141,9 @@ def main(argv=None):
                               seats_growth=a.seats_growth)
         print(f"\n[3] Admission cut-off (próg) projection")
         print(f"    2025 cut-off: {proj['cut_base']:.0f}  -> {proj['admit_base']*100:.1f}% of "
-              f"the pool cleared it (~{proj['seats']:,.0f} admitted-equivalent seats"
-              f"{'' if a.seats_growth==0 else f', +{a.seats_growth:.0%}'})")
-        print(f"    2026 admit rate at fixed seats: {proj['admit_target']*100:.1f}%  "
+              f"the 2025 pool cleared it"
+              f"{'' if a.seats_growth==0 else f' (intake {a.seats_growth:+.0%})'}")
+        print(f"    2026 admit rate at fixed top-group size: {proj['admit_target']*100:.1f}%  "
               f"(pool {an25.pool:,.0f}->{an26.pool:,.0f})")
         print(f"    Decompose:  pool-growth pushes cut {proj['pool_effect']:+.0f}, "
               f"weaker field pulls {proj['weakening_effect']:+.0f}")

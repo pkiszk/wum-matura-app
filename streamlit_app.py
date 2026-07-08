@@ -101,8 +101,10 @@ with st.sidebar:
     st.subheader("Admission cut-off (próg)")
     cut2025 = st.number_input("2025 cut-off for this programme", 0, 300, 221,
                               help="Last-admitted index in 2025. 0 = skip the projection.")
-    seats_growth = st.slider("2026 seats change", -0.20, 0.50, 0.0, 0.05,
-                             help="WUM rarely expands limits; stress it here.")
+    seats_growth = st.slider("2026 intake change (WUM places)", -0.20, 0.50, 0.0, 0.05,
+                             help="Models WUM deliberately adding/cutting places for THIS "
+                                  "programme (relative change). WUM rarely expands limits; "
+                                  "stress it here. +20% intake → lower cut-off.")
 
     st.header("Modelling assumptions")
     r_bc = st.slider("corr biologia–chemia", 0.0, 0.95, 0.60, 0.05)
@@ -201,16 +203,17 @@ if cut2025 > 0:
     k1, k2, k3 = st.columns(3)
     k1.metric("2025 cut-off", f"{proj['cut_base']:.0f}")
     k2.metric("2026 est. cut-off", f"{proj['cut_target']:.0f}", f"{proj['net']:+.0f}",
-              help="A PROJECTION from seats & pool growth — not a published figure. WUM's "
-                   "real 2026 próg is set at recruitment, after applications close.")
+              help="A PROJECTION from your 2025 cut-off & the pool growth — not a published "
+                   "figure. WUM's real 2026 próg is set at recruitment, after applications close.")
     k3.metric("Candidate margin", f"{idx - proj['cut_target']:+.0f}",
               help=f"vs 245 index; 2025 margin was {idx - proj['cut_base']:+.0f}")
     st.caption(
-        f"**Estimated, not actual** — projected by holding seats ~fixed while the pool grows; "
-        f"WUM publishes the real próg only at recruitment. "
-        f"Held at ~**{proj['seats']:,.0f}** seats (2025 admit rate {proj['admit_base']*100:.1f}% → "
-        f"2026 {proj['admit_target']*100:.1f}% as the pool grows). Two opposing forces: pool "
-        f"growth pushes the cut **{proj['pool_effect']:+.0f}**, the weaker field pulls it "
+        f"**Estimated, not actual** — WUM publishes the real próg only at recruitment. "
+        f"Projected from your 2025 cut-off: **{proj['admit_base']*100:.1f}%** of the 2025 pool "
+        f"cleared **{proj['cut_base']:.0f}**; if the same-size top group clears it in 2026, the "
+        f"**+{growth:.0%}** larger pool makes that only **{proj['admit_target']*100:.1f}%**, "
+        f"which maps to a higher score. Two opposing forces: pool growth pushes the cut "
+        f"**{proj['pool_effect']:+.0f}**, the weaker field pulls it "
         f"**{proj['weakening_effect']:+.0f}** → net **{proj['net']:+.0f}**. "
         f"Candidate {idx} clears it by **{idx - proj['cut_target']:+.0f}**.")
 
