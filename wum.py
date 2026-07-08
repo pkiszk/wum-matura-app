@@ -12,12 +12,35 @@ larger and weaker (see build_2026).
 from __future__ import annotations
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from cke_data import YearData, load_2025
 from model import Marginal, simulate_index, default_corr, JointResult
 
 # WUM index: chemia + biologia + best-of(matematyka, fizyka). Third slot configurable.
 WUM_CORE = ("chemia", "biologia")
 WUM_THIRD_DEFAULT = "matematyka"     # or "fizyka"
+# 4-var copula order for the max(math, phys) model: chem, bio, and BOTH third options.
+WUM_SUBJECTS_4 = ("chemia", "biologia", "matematyka", "fizyka")
+
+
+def wum_corr(r_bc: float, r_b3: float, r_c3: float, r_mf: float = 0.60) -> np.ndarray:
+    """Build the 4x4 correlation over [chemia, biologia, matematyka, fizyka] from the
+    three core sliders (bio-chem, bio-third, chem-third). The third-slot correlations
+    are applied to BOTH matematyka and fizyka; r_mf is math<->phys (rarely co-taken, so
+    it only shapes the latent max)."""
+    return np.array([
+        [1.0,  r_bc, r_c3, r_c3],
+        [r_bc, 1.0,  r_b3, r_b3],
+        [r_c3, r_b3, 1.0,  r_mf],
+        [r_c3, r_b3, r_mf, 1.0]], float)
+
+
+def _max_third_combine(cols: np.ndarray, subs: list) -> np.ndarray:
+    """WUM index on 4-var samples: chem + bio + max(math, phys)."""
+    ix = {s: k for k, s in enumerate(subs)}
+    best_third = np.maximum(cols[:, ix["matematyka"]], cols[:, ix["fizyka"]])
+    return cols[:, ix["chemia"]] + cols[:, ix["biologia"]] + best_third
 
 
 @dataclass
@@ -39,9 +62,11 @@ class YearAnalysis:
     candidate_index: float
     candidate_percentile: float        # percentile of the index in this population
     candidate_subject_pct: dict        # subject -> candidate's marginal percentile
+                                       # (third slot = MED-POOL marginal, not national)
     pool: float                        # relevant applicant-pool size assumed
     rank_above: float                  # estimated rivals scoring strictly higher
     note: str = ""
+    extras: dict = field(default_factory=dict)   # nu, med-pool gap, national third %ile…
 
 
 def _subject_order(third: str) -> list[str]:
@@ -50,29 +75,67 @@ def _subject_order(third: str) -> list[str]:
 
 def analyse_year(data: YearData, candidate: Candidate, *, third: str = WUM_THIRD_DEFAULT,
                  corr=None, pool: float | None = None, shifts: dict | None = None,
-                 n: int = 200_000, seed: int = 12345, note: str = "") -> YearAnalysis:
+                 n: int = 200_000, seed: int = 12345, nu: float | None = 6.0,
+                 medpool: bool = True, max_third: bool = True,
+                 medpool_gap: dict | None = None, note: str = "") -> YearAnalysis:
     """Run the full analysis for one year's population against one candidate.
 
-    shifts: optional {subject: pts} horizontal shift applied to that subject's marginal
-            (used to model 2026 as the 2025 shape moved by the announced mean change).
-    pool:   relevant applicant-pool size. Default = N of the rarest core subject
-            (chemia), the binding constraint for a med-school triple.
+    shifts:    optional {subject: pts} horizontal shift applied to that subject's
+               marginal (models 2026 as the 2025 shape moved by the announced mean change).
+    nu:        Student-t copula degrees of freedom (None = Gaussian). Lower => heavier
+               joint tails / more upper-tail dependence where the cut-off lives.
+    medpool:   reweight the THIRD-slot marginal(s) onto the med-applicant sub-population
+               (national maths/physics R is not the right reference — see cke_data).
+    max_third: model the third slot as max(matematyka, fizyka) via a 4-var copula (the
+               real WUM rule) instead of a single chosen marginal.
+    pool:      relevant applicant-pool size. Default = N of the rarest core subject
+               (chemia), the binding constraint for a med-school triple.
     """
-    subjects = _subject_order(third)
     shifts = shifts or {}
-    marginals = {s: Marginal(data.get(s), shift=shifts.get(s, 0.0)) for s in subjects}
-    joint = simulate_index([marginals[s] for s in subjects], corr=corr, n=n, seed=seed)
 
-    idx = candidate.index(subjects)
+    def _marg(subject, is_third):
+        gap = data.medpool_gap_for(subject) if (medpool and is_third) else 0.0
+        if medpool_gap and subject in medpool_gap and is_third:
+            gap = float(medpool_gap[subject])
+        return Marginal(data.get(subject), shift=shifts.get(subject, 0.0), tilt_shift=gap)
+
+    core = {s: _marg(s, is_third=False) for s in WUM_CORE}
+
+    if max_third:
+        third_marg = {s: _marg(s, is_third=True) for s in ("matematyka", "fizyka")}
+        marginals = {**core, **third_marg}
+        order = list(WUM_SUBJECTS_4)                    # chem, bio, math, phys
+        R = default_corr(order) if corr is None else corr
+        joint = simulate_index([marginals[s] for s in order], corr=R, n=n, seed=seed,
+                               nu=nu, combine=_max_third_combine)
+    else:
+        marginals = {**core, third: _marg(third, is_third=True)}
+        order = _subject_order(third)
+        joint = simulate_index([marginals[s] for s in order], corr=corr, n=n, seed=seed, nu=nu)
+
+    # Candidate keeps their OWN chosen third subject (they did not sit the other one);
+    # the FIELD gets the max(math, phys) uplift, so the candidate ranks slightly lower.
+    report_subjects = _subject_order(third)
+    idx = candidate.index(report_subjects)
     pct = joint.percentile_of(idx)
-    subj_pct = {s: marginals[s].percentile(candidate.scores[s]) for s in subjects}
+
+    # Per-subject standing: chem/bio vs national; third vs the MED-POOL marginal.
+    subj_pct = {s: marginals[s].percentile(candidate.scores[s]) for s in report_subjects}
+    third_national_pct = Marginal(
+        data.get(third), shift=shifts.get(third, 0.0)).percentile(candidate.scores[third])
 
     if pool is None:
         pool = float(data.get("chemia").n)
     above = joint.rank_above(idx, pool)
-    return YearAnalysis(year=data.year, subjects=subjects, joint=joint, marginals=marginals,
-                        candidate_index=idx, candidate_percentile=pct,
-                        candidate_subject_pct=subj_pct, pool=pool, rank_above=above, note=note)
+    extras = {"nu": nu, "medpool": medpool, "max_third": max_third,
+              "third": third,
+              "third_medpool_gap": (data.medpool_gap_for(third) if medpool else 0.0),
+              "third_national_pct": third_national_pct,
+              "third_medpool_pct": subj_pct[third]}
+    return YearAnalysis(year=data.year, subjects=report_subjects, joint=joint,
+                        marginals=marginals, candidate_index=idx, candidate_percentile=pct,
+                        candidate_subject_pct=subj_pct, pool=pool, rank_above=above,
+                        note=note, extras=extras)
 
 
 def build_2026(base: YearData, *, means_2026: dict, growth: float = 0.30) -> tuple[dict, float]:

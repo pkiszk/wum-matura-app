@@ -14,11 +14,23 @@ project. It shares only `numpy`.
 
 WUM (Warszawski Uniwersytet Medyczny) ranks candidates on a **recruitment index**:
 
-    index = chemia_R + biologia_R + (matematyka_R  OR  fizyka_R)
+    index = chemia_R + biologia_R + max(matematyka_R, fizyka_R)
 
 each subject a matura **extended-level** ("poziom rozszerzony") result in **%**, with the
-rule **1% = 1 point**, so `index ∈ [0, 300]`. Physics may substitute for mathematics.
-The worked candidate: chemia 85, biologia 88, matematyka 72 → **index = 245**.
+rule **1% = 1 point**, so `index ∈ [0, 300]`. The third slot takes the **better of**
+mathematics or physics (§3a). The worked candidate sat only mathematics: chemia 85,
+biologia 88, matematyka 72 → **index = 245** (the *field*, however, gets the best-of-two
+uplift, so a candidate who sat one subject ranks slightly below the modelled field).
+
+> **Three modelling corrections (2026-07 revision).** This revision fixes three issues
+> that had overstated the candidate and understated the field. Each is documented in the
+> section noted and covered by `test_matura.py`:
+> 1. **Third-subject reference population** (§2b) — maths/physics R nationally is dominated
+>    by *non-med* candidates; the third slot is now ranked against a **med-pool** marginal.
+> 2. **Copula family** (§3) — Gaussian → **Student-t**, which (unlike Gaussian) has non-zero
+>    upper-tail dependence, exactly where a top-3% cut-off lives.
+> 3. **Third slot = max(math, phys)** (§3a) — an order statistic on a **4-variable** copula,
+>    not a single chosen marginal.
 
 Two questions the module answers:
 1. **Percentile** — what share of candidates score at or below 245? (how exceptional)
@@ -47,7 +59,20 @@ National subject reports ("raport krajowy"), hosted on oke.poznan.pl
 > they are **not** used in the percentile math (see §2 — we use the stanine curve instead).
 > The SD is never used at all; the mean is used only to size the 2026 shift (§5).
 
-### 1b. Stanine tables — the primary object
+### 1b'. Centyle tables — the **primary** object (2025 & 2026)
+CKE also publishes, per subject, the **skala centylowa** ("Skale centylowe wyników"): a
+fine table giving, for each score(%), its **centyl** = `P(result ≤ score)·100`. This is the
+published score→percentile curve *itself* at ~1-point resolution — no band interpolation.
+We store it per subject (`cke_data.py` → `centile`, and `data/matura/2026.json`) and use it
+as the primary empirical object whenever present; the stanine table (§1b) is the fallback.
+The centyle curve is strictly finer: e.g. **matematyka 2025 at 72 reads 91** from the centyle
+curve vs ~86.6 from 9-knot stanine interpolation — the coarse object mis-stated it by ~4 pts.
+
+Sources: CKE *Skale centylowe wyników — egzamin maturalny* **2025** (`…EM25 CENTYLE.pdf`,
+2025-07-08) and **2026** (`…EM26 CENTYLE.pdf`, 2026-07-08); "Wszystkie przedmioty", all
+national takers.
+
+### 1b. Stanine tables — the fallback object
 CKE "Skale staninowe wyników — egzamin maturalny 2025". A stanine ("stanina") is a
 9-class scale where each class holds a **fixed fraction of the population**:
 
@@ -90,23 +115,27 @@ count is the right basis; for distribution shape we use §1a/§1b.)
 ## 2. Per-subject marginal: score → percentile (the empirical CDF)
 
 We build each subject's cumulative distribution function (CDF) by **linear interpolation
-between the stanine knots**, anchored at (0, 0):
+between the published knots**, anchored at (0, 0). With the **centyle** curve (primary,
+§1b') the knots are the ~57 published `(score, centyl/100)` points; with the **stanine**
+fallback (§1b) they are the 9 `(stanine_upper, cum)` points:
 
-    knots_x = [0] + stanine_upper           # scores
-    knots_y = [0] + cum                     # cumulative fractions
+    knots_x = scores                        # from centyle, else stanine_upper
+    knots_y = cumulative fractions          # centyl/100, else stanine cum
     percentile(score) = 100 · interp(score; knots_x → knots_y)
 
 This respects each subject's real **skew** (e.g. matematyka R: modal 0%, mean 33% — heavily
-right-skewed) rather than assuming a symmetric bell curve. Code: `model.py` → `Marginal`.
+right-skewed) rather than assuming a symmetric bell curve. Code: `model.py` → `Marginal`,
+`cke_data.py` → `SubjectStats.cdf_knots`.
 
-### Worked example — chemia 85 (hand-checkable)
-chemia knots: (0,0) (5,.04) (8,.11) (17,.23) (32,.40) (48,.60) (65,.77) (80,.89) (90,.96) (100,1).
-85 lies between (80, 0.89) and (90, 0.96):
+### Worked example — candidate subjects (hand-checkable against the published centyle table)
+Reading the 2025 centyle curve directly (`test_marginal_reproduces_centile_curve` asserts the
+CDF hits every published knot):
 
-    percentile(85) = 0.89 + (85−80)/(90−80) · (0.96−0.89) = 0.89 + 0.5·0.07 = 0.925 → 92.5%
+    chemia 85 → 94   ·   biologia 88 → 98   ·   matematyka 72 → 91   ·   fizyka 80 → 78
 
-Same method gives **biologia 88 → 96.8%**, **matematyka 72 → 86.6%**. All three are
-reproduced by `test_matura.py` and printed by `report.py`.
+(The coarser stanine fallback returns chemia 85 → 92.5, matematyka 72 → 86.6 — up to ~4 pts
+off; the finer centyle numbers above are authoritative.) For 2026 the same lookup gives
+chemia 85 → 95, biologia 88 → 99, matematyka 72 → 87, fizyka 80 → 90.
 
 ### Sampling (inverse CDF)
 To simulate a candidate we invert the curve: draw `u ~ Uniform(0,1)`, then
@@ -114,30 +143,101 @@ To simulate a candidate we invert the curve: draw `u ~ Uniform(0,1)`, then
 
 ---
 
-## 3. Joint distribution of the index (Gaussian copula)
+## 2b. Third-subject **med-pool** marginal (the reference-population fix)
 
-The index is a **sum of three subjects**, so its distribution depends on how the subjects
-**co-move** — a joint distribution CKE does **not** publish. We therefore combine the three
-empirical marginals with a **Gaussian copula**: the marginals stay exactly as in §2 (skew
-preserved), and only the *dependence* is modelled as multivariate-normal.
+The national marginal from §2 is the right reference for **chemia** and **biologia** —
+chemia-R is essentially the med pool (§6), and bio-R is med-heavy. It is the **wrong**
+reference for the **third slot**. National **matematyka R** (N≈88.9k, mean 37%) is
+dominated by **non-med** candidates (engineering, economics, CS); a med applicant's maths
+is drawn from maths-R *conditioned on also taking bio-R and chem-R*, a sub-population that
+sits well to the right. Ranking matematyka 72 against the raw national pool (→ 87th
+percentile in 2026, from the published centyle curve) **overstates** the candidate and
+**understates** the field.
 
-Procedure (`model.py` → `simulate_index`), subject order `[chemia, biologia, third]`:
+**Fix.** We build a **distinct med-pool marginal** for the third subject, not the raw
+national one. Cleanest data-grounded route: reconstruct it from published admitted-cohort
+subject profiles (WUM and peers publish last-admitted subject scores and admitted
+distributions). **Interim proxy (current default):** a max-entropy **reweight** of the
+national marginal to a target mean uplifted by the estimated national→med-pool gap:
 
-1. Correlation matrix `R` (3×3). Defaults (`default_corr`, tunable):
-   `bio–chem = 0.60`, `chem–third = 0.50`, `bio–third = 0.45` (math); physics analogues higher.
+    gap = { matematyka: +13, fizyka: +8 } pts of mean     # cke_data.THIRD_MEDPOOL_GAP
+
+The reweight exponentially tilts the stanine-segment masses to hit `base_mean + gap`,
+keeping the same support [0,100] (no boundary pile-up). Both the CDF (percentile) and the
+sampler (quantile) read the tilted curve, so candidate standing and the simulated field are
+consistent. Code: `Marginal(tilt_shift=…)`, selected in `wum.analyse_year` (`medpool=True`).
+The gaps are **interim estimates** — overridable per-year via the JSON loader
+(`"medpool_gap": {…}`) and via the app slider — and are flagged to be replaced with
+admitted-cohort data when in hand (`cke_data.THIRD_MEDPOOL_SOURCE`).
+
+**Delta this produces (documented, `test_medpool_third_delta`):**
+
+| matematyka 72 → percentile | national marginal (centyle) | med-pool marginal |
+|---|---:|---:|
+| 2025 | 91.0% | **80.7%** (−10.3) |
+| 2026 | 87.0% | **76.0%** (−11.0) |
+
+Physics (fizyka) gets the smaller +8 gap — physics-R is already more self-selected/able, so
+the med vs all-comers gap is narrower. Setting `medpool=False` recovers the national figure.
+
+---
+
+## 3. Joint distribution of the index (Student-t copula)
+
+The index is a **sum of subjects**, so its distribution depends on how the subjects
+**co-move** — a joint distribution CKE does **not** publish. We combine the empirical
+marginals with a **copula**: the marginals stay exactly as in §2 (skew preserved), and only
+the *dependence* is modelled.
+
+**Family: Student-t, not Gaussian.** The admission cut-off lives in the **top ~3%**. A
+**Gaussian** copula has **zero upper-tail dependence** (λ_upper = 0): it *decouples* joint
+extremes exactly where the cut-off is set, understating candidates who are high in **all**
+subjects. A **Student-t** copula has **non-zero** upper-tail dependence controlled by the
+degrees of freedom **ν** — lower ν ⇒ heavier joint tails; ν → ∞ recovers the Gaussian. We
+default to **ν = 6** (5–8 is reasonable for co-moving exam scores); it is a slider in the app.
+
+Procedure (`model.py` → `simulate_index`), subject order `[chemia, biologia, matematyka, fizyka]`:
+
+1. Correlation matrix `R`. Defaults (`default_corr`, tunable): `bio–chem = 0.60`,
+   `chem–third = 0.50`, `bio–third = 0.45`, `math–phys = 0.60`.
 2. Cholesky factor `L` with `R = L·Lᵀ` (nudged onto the PSD cone if a hand-entered `R`
    is not positive-definite).
-3. Draw `Z ~ N(0, I)` of shape `(N, 3)`; correlate: `X = Z · Lᵀ`.
-4. Map to uniforms with the standard normal CDF: `U = Φ(X)` (Φ via `math.erf`, no scipy).
-5. Invert each marginal: `score_j = Q_j(U_j)`; `index = Σ_j score_j`.
+3. Draw `Z ~ N(0, I)` of shape `(N, k)`; correlate: `X = Z · Lᵀ`.
+4. **t step:** draw `W ~ χ²(ν)` and form `T = X / √(W/ν)` (now multivariate-t); map to
+   uniforms with the **Student-t CDF** `U = t_ν(T)`. (ν = None ⇒ `U = Φ(X)`, the Gaussian
+   copula.) Both CDFs are computed **without scipy**: Φ via `math.erf`; `t_ν` via a small
+   vectorised **regularized-incomplete-beta** routine (`_betai`/`_betacf`, continued
+   fraction), validated against reference values in `test_t_cdf_matches_reference`.
+5. Invert each marginal: `score_j = Q_j(U_j)`; combine (§3a).
 
 `N = 200 000` samples, fixed `seed = 12345` (reproducible; `test_matura.py` checks that same
 seed → identical output).
 
-**Why a copula, and what the assumption costs:** higher correlation fattens the tails of the
-sum (high scorers cluster), which moves extreme percentiles. Correlation is the single
-biggest modelling assumption; it is a slider in the app and an argument in code precisely so
-you can stress it. The marginals themselves carry **no** normality assumption.
+**What ν buys, verified (`test_student_t_upper_tail_monotone_in_nu`):** at fixed
+correlations, lowering ν **raises the index upper tail** — index p99 is strictly monotone in
+ν (ν=3: 285 → ν=8: 282 → ν=40: 281 → Gaussian: 280) and the projected 2026 cut-off moves
+**up** under heavier tails. Correlation and ν are the two dependence assumptions; both are
+sliders/arguments so you can stress them. The marginals carry **no** normality assumption.
+
+### 3a. Third slot = **max(matematyka, fizyka)** (a 4-variable copula)
+
+WUM takes the **better of** maths or physics, so the third contribution is an **order
+statistic**, not a single marginal. We therefore draw a **4-variable** copula over
+`[chemia, biologia, matematyka, fizyka]` and combine:
+
+    index = chemia + biologia + max(matematyka, fizyka)
+
+Code: `simulate_index(combine=…)` with `wum._max_third_combine`; enabled by
+`analyse_year(max_third=True)` (default). The 4×4 correlation is built from the three core
+sliders by `wum.wum_corr` (the third-slot correlations apply to both maths and physics;
+`math–phys = 0.60` shapes the latent max).
+
+**Approximation stated plainly:** few candidates actually sit **both** maths-R and
+physics-R, so the joint `(math, phys)` is a *latent* construct representing "best available
+third subject." The max on this latent pair is the field's best-of uplift. Effect, verified
+(`test_max_third_uplift`): the field index **mean rises** (≈135 → ≈153) and its **upper tail
+rises**, so a fixed candidate score ranks **slightly lower** than under a single-third model.
+The candidate keeps their own chosen third subject (they did not sit the other one).
 
 ---
 
@@ -151,12 +251,15 @@ Given `N` simulated indices and the candidate index `v = 245`:
 `pool` = the relevant applicant population (see §6). Code: `JointResult.percentile_of`,
 `JointResult.rank_above`.
 
-**2025 result:** index mean ≈ 122, median ≈ 117, SD ≈ 64, skew ≈ +0.32; **245 → 96.3%**;
-rivals above ≈ 775 in a 21 200 pool.
+**2025 result (default model — centyle marginals §1b', med-pool third §2b, Student-t ν=6 §3,
+max-third §3a):** index mean ≈ 150, median ≈ 150, SD ≈ 63, p99 ≈ 282; **245 → 93.2%**;
+rivals above ≈ 1 439 in a 21 200 pool. The stronger field (med-pool third + best-of-two +
+tail dependence) pulls this below the old raw-national-and-Gaussian figure of 96.3% — that
+number overstated the candidate, which is exactly what this revision corrects.
 
-**Sanity vs a normal approximation (why skew matters):** a naive `Φ((245−122)/64)` gives
-97.2% — i.e. a bell curve would *overstate* the candidate by ~1 point, because the real
-index is right-skewed (fatter high tail). Reproduce with the snippet in §10.
+**Sanity vs a normal approximation (why skew matters):** the empirical percentile still
+differs from a naive `Φ((245−mean)/sd)` because the index is not Gaussian (right-skewed body,
+tail-dependent top). Reproduce with the snippet in §10.
 
 ---
 
@@ -170,6 +273,10 @@ index is right-skewed (fatter high tail). Reproduce with the snippet in §10.
 > *what-if model* that (a) is still available for scenarios and (b) was used to make a
 > blind forecast *before* any 2026 data existed. That forecast was then confirmed by the
 > actuals: predicted 245 → 97.3th percentile & cut-off ~229; **real data: 97.3% & ~228.**
+> (Those percentile/cut-off figures were computed under the *pre-2026-07 model* —
+> raw-national third subject, single third marginal, Gaussian copula. The shift-model vs
+> real-data validation is about the 2026 **marginal shapes** and is unaffected; the
+> current default model's headline numbers are in §11.)
 > The real 2026 stanine upper bounds (extended level): matematyka N=88 856
 > [0,2,8,22,42,60,74,100,100]; biologia N=67 312 [8,12,18,28,43,58,72,82,100]; chemia
 > N=31 691 [3,7,15,28,47,63,77,87,100]; fizyka N=19 364 [3,7,13,28,50,68,80,90,100].
@@ -262,14 +369,20 @@ real 2026 data.
 
 ## 8. Assumptions & limitations (read before trusting a number)
 
-1. **Reference pool = all national extended-level takers**, not the self-selected WUM
-   applicant field (who are stronger). So the *absolute* percentile flatters real
-   med-competition standing; treat it as an upper bound. (Relative year-on-year *changes*
-   are more robust than the absolute level.)
-2. **No published joint** → the subject correlation (§3) is an assumption. It mainly affects
-   the tails of the index. Stress it.
-3. **2026 shape = 2025 shape shifted** (§5) — center moves, spread does not; boundary
-   clipping is approximate.
+1. **Reference pool.** The **third subject** is now med-pool-corrected (§2b), but **chemia &
+   biologia are still ranked vs all national extended-level takers**. chem/bio-R are already
+   med-heavy, so the residual flattery is much smaller than the raw-national third subject was
+   — but **non-zero**. The absolute percentile is still a mild upper bound on true
+   med-competition standing; year-on-year *changes* are the robust part.
+1a. **Med-pool gaps are interim estimates** (§2b: matematyka +13, fizyka +8 pts of mean),
+   sized to the national→med-pool mean gap pending published admitted-cohort subject
+   profiles. They are the single biggest third-subject lever — overridable via JSON/slider.
+2. **No published joint** → the subject **correlation and ν** (§3) are assumptions. They
+   drive the tails of the index (where the cut-off lives). Stress both.
+2a. **max(math, phys) uses a latent joint** (§3a): few candidates sit both subjects, so the
+   best-of-two is a modelling construct for "best available third subject."
+3. **2026 shape = 2025 shape shifted** (§5, what-if model only) — center moves, spread does
+   not; boundary clipping is approximate.
 4. **Whole-percent source data** — CKE rounds; sub-percent precision is not available.
 5. **Cohort vs graduates** — pool uses broad cohort counts (§1c); distribution shape uses
    this-year-graduate parameters (§1a/§1b). Documented, not hidden.
@@ -281,9 +394,9 @@ real 2026 data.
 
 | File | Responsibility |
 |---|---|
-| `cke_data.py` | Sourced 2025 data (stanines + moments), `SubjectStats`, CDF knots, JSON override loader |
-| `model.py` | `Marginal` (empirical CDF/inverse-CDF), `Φ`, Gaussian copula `simulate_index`, `JointResult` |
-| `wum.py` | WUM index definition, `Candidate`, `analyse_year`, `build_2026` (mean→shift), `project_cutoff` |
+| `cke_data.py` | Sourced 2025 data (centyle + stanines + moments), `SubjectStats`, `cdf_knots` (centyle-primary, stanine-fallback), JSON override loader, `THIRD_MEDPOOL_GAP` (§2b) |
+| `model.py` | `Marginal` (empirical CDF/inverse-CDF + med-pool `tilt_shift`), `Φ`, Student-t CDF (`_betai`/`_t_cdf`, no scipy), t/Gaussian copula `simulate_index` (`nu`, `combine`), `JointResult` |
+| `wum.py` | WUM index = chem+bio+max(math,phys), `wum_corr` (4×4), `Candidate`, `analyse_year` (`nu`/`medpool`/`max_third`), `build_2026`, `project_cutoff` |
 | `report.py` | CLI: prints every intermediate number and the takeaway |
 | `app_matura.py` | Streamlit UI — all inputs editable (scores, correlations, 2026 means, pool, cut-off) |
 | `test_matura.py` | Acceptance tests: stanine reproduction, monotonicity, candidate=245, cut-off identities |
@@ -327,23 +440,42 @@ Independent cross-checks you can run without this code:
 - **Stanine boundary check:** in each CKE PDF, the top of stanine 7 should map to the 89th
   percentile (0.04+0.07+0.12+0.17+0.20+0.17+0.12 = 0.89). e.g. chemia says 80% → our curve
   returns 89.0% at 80 (`test_matura.py` asserts this).
-- **Mean cross-check:** the simulated index mean (~122) should ≈ sum of subject means
-  (33+46+43 = 122). It does.
+- **Mean cross-check:** the per-subject empirical means recovered from the fine centyle
+  curve sit within ~1–2 pts of CKE's published means (e.g. 2025 matematyka 31.3 vs published
+  33; the coarse integer centyl rounds the mean marginally low). The **default** index mean
+  is higher (~150 in 2025) than the bare sum of subject means because the med-pool third
+  (§2b) and best-of-two (§3a) both lift the third-subject contribution; reproduce a plain
+  ~122 baseline with `report.py --no-medpool --no-max-third --gaussian`.
 - **Cut-off identity:** projecting with the *same* year and pool must return the input
   cut-off (`test_matura.py` asserts `project(221) ≈ 221`).
 
 ---
 
-## 11. Headline results (default inputs)
+## 11. Headline results (default model: centyle marginals §1b' · med-pool third §2b · Student-t ν=6 §3 · max-third §3a)
 
-| Quantity | 2025 | 2026 model (blind) | **2026 actual (real data)** |
-|---|---:|---:|---:|
-| chemia 85 → percentile | 92.5% | — | 94.6% |
-| biologia 88 → percentile | 96.8% | — | 97.3% |
-| matematyka 72 → percentile | 86.6% | — | 87.3% |
-| **index 245 → percentile** | **96.3%** | **97.3%** | **97.3%** |
-| rivals scoring above 245 | ~775 | ~893 | ~864 (pool 31 691) |
-| admission cut-off (próg) | 221 (given) | ~229 (+8) | **~228 (+7)** |
+| Quantity | 2025 | **2026 actual (real data)** |
+|---|---:|---:|
+| chemia 85 → percentile (national centyle) | 94.0% | 95.0% |
+| biologia 88 → percentile (national centyle) | 98.0% | 99.0% |
+| matematyka 72 → percentile **(med-pool)** | **80.7%** | **76.0%** |
+| matematyka 72 → percentile (raw national centyle, for contrast) | 91.0% | 87.0% |
+| **index 245 → percentile** | **93.2%** | **95.9%** |
+| rivals scoring above 245 | ~1 439 (pool 21 200) | ~1 311 (pool 31 691) |
+| admission cut-off (próg) | 221 (given) | **~222 (+1)** |
 
-Cut-off decomposition (real data): pool growth **+15**, weakening **−8**, net **+7**. The
-blind model (+8) landed within 1 point of the actual — a clean out-of-sample validation.
+Cut-off decomposition (real data): pool growth **+14**, weakening **−13**, net **+1**.
+
+**What changed, and why.** Four corrections separate this from the original raw-national /
+single-third / Gaussian / stanine model (which read index 245 → 96.3% / 97.3%):
+1. **Centyle marginals (§1b')** replace 9-knot stanine interpolation with the published
+   ~57-knot percentile curve — authoritative per-subject percentiles (e.g. matematyka 2025
+   at 72: 86.6 → **91**; biologia 88: 96.8 → **98**), which by themselves *raise* the
+   candidate.
+2. **Med-pool third (§2b)** ranks maths/physics against bio+chem co-takers, dropping the
+   third-subject percentile ~10–11 pts — the largest single correction.
+3. **max(math, phys) (§3a)** and 4. **Student-t tail dependence (§3)** strengthen the field.
+
+Net: the index sits at **93.2% (2025) / 95.9% (2026)** — a **top-5-to-7%** band, below the
+old top-3% figure the coarser/overstated model produced. The candidate still clears the
+projected 2026 cut-off (~222) comfortably by **+23**. All figures reproduce from
+`report.py … --data2026 data/matura/2026.json` and are locked by `test_matura.py`.

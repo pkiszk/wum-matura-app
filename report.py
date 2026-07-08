@@ -44,8 +44,22 @@ def main(argv=None):
                     help="assumed change in seats for the projection (e.g. 0.10 = +10%)")
     ap.add_argument("--data2026", type=str, default=None,
                     help="path to real 2026 JSON (bypasses the shift model)")
+    ap.add_argument("--nu", type=float, default=6.0,
+                    help="Student-t copula degrees of freedom (lower = heavier joint "
+                         "tails / more upper-tail dependence). Use a large value or "
+                         "--gaussian for the old Gaussian copula.")
+    ap.add_argument("--gaussian", action="store_true",
+                    help="use a Gaussian copula (nu -> infinity), zero upper-tail dependence")
+    ap.add_argument("--no-medpool", action="store_true",
+                    help="rank the third subject against the RAW national pool (overstates "
+                         "the candidate; off by default)")
+    ap.add_argument("--no-max-third", action="store_true",
+                    help="model the third slot as a single subject instead of max(math,phys)")
     ap.add_argument("--n", type=int, default=200_000)
     a = ap.parse_args(argv)
+    nu = None if a.gaussian else a.nu
+    medpool = not a.no_medpool
+    max_third = not a.no_max_third
 
     scores = {"chemia": a.chem, "biologia": a.bio}
     scores[a.third] = a.phys if (a.third == "fizyka" and a.phys is not None) else \
@@ -60,17 +74,28 @@ def main(argv=None):
           f"{scores[a.third]:.0f})")
     print("=" * 74)
 
+    cop = "Gaussian copula" if nu is None else f"Student-t copula (nu={nu:g})"
+    print(f"\nModel: {cop}; third slot = "
+          f"{'max(matematyka, fizyka)' if max_third else a.third} "
+          f"(med-pool reference: {'ON' if medpool else 'OFF'}).")
+
     # ---- 2025 reference population -------------------------------------
-    an25 = analyse_year(d2025, cand, third=a.third, pool=a.pool, n=a.n,
+    an25 = analyse_year(d2025, cand, third=a.third, pool=a.pool, n=a.n, nu=nu,
+                        medpool=medpool, max_third=max_third,
                         note="Official CKE 2025 extended-level population.")
     print(f"\n[1] 2025 reference population  (all extended-level takers, N_chem="
           f"{d2025.get('chemia').n:,})")
-    print(f"    Candidate per-subject percentile (vs all {a.third}/bio/chem R takers):")
+    print(f"    Candidate per-subject percentile (chem/bio vs national; third vs med-pool):")
     for s in an25.subjects:
         st = d2025.get(s)
+        tag = ""
+        if s == a.third and medpool:
+            tag = (f"  [MED-POOL; national would read "
+                   f"{_fmt_pct(an25.extras['third_national_pct'])}, "
+                   f"gap +{an25.extras['third_medpool_gap']:.0f} on the mean]")
         print(f"      {s:11s} {cand.scores[s]:5.0f}%  ->  "
               f"{_fmt_pct(an25.candidate_subject_pct[s]):>7}  "
-              f"(subject mean {st.mean:.0f}%, sd {st.sd:.0f}%, N={st.n:,})")
+              f"(subject mean {st.mean:.0f}%, sd {st.sd:.0f}%, N={st.n:,}){tag}")
     sm = an25.joint.summary()
     print(f"    Simulated index: mean {sm['mean']:.0f}, median {sm['median']:.0f}, "
           f"sd {sm['sd']:.0f}, p90 {sm['p90']:.0f}, p99 {sm['p99']:.0f} (max 300)")
@@ -82,7 +107,8 @@ def main(argv=None):
     # ---- 2026 modelled population -------------------------------------
     if a.data2026:
         d2026 = load_year(a.data2026)
-        an26 = analyse_year(d2026, cand, third=a.third, n=a.n,
+        an26 = analyse_year(d2026, cand, third=a.third, n=a.n, nu=nu,
+                            medpool=medpool, max_third=max_third,
                             note=f"Real 2026 data from {a.data2026}")
         pool_note = "real 2026 data"
     else:
@@ -91,6 +117,7 @@ def main(argv=None):
         if a.pool2026 is not None:
             pool26 = a.pool2026
         an26 = analyse_year(d2025, cand, third=a.third, shifts=shifts, pool=pool26, n=a.n,
+                            nu=nu, medpool=medpool, max_third=max_third,
                             note="MODEL: 2025 shape shifted by announced mean drops.")
         pool_note = (f"model: bio mean {d2025.get('biologia').mean:.0f}->{a.bio2026:.0f} "
                      f"({shifts['biologia']:+.0f}), chem {d2025.get('chemia').mean:.0f}->"
@@ -133,10 +160,15 @@ def main(argv=None):
           f"{_fmt_pct(an25.candidate_percentile)} percentile (2025 pool)")
     print(f"  to ~{_fmt_pct(an26.candidate_percentile)} ({kind}): "
           f"{delta:+.1f} pts of percentile.")
-    print("  CAVEAT: reference pool = ALL extended-level takers nationally, not the "
-          "self-selected WUM")
-    print("  applicant field (who are stronger) — so real med-competition standing is "
-          "somewhat lower.")
+    print("  MODEL: third slot = "
+          f"{'max(matematyka, fizyka)' if max_third else a.third}, third-subject "
+          f"reference = {'med-pool (bio+chem co-takers)' if medpool else 'raw national'}, "
+          f"{cop}.")
+    print("  CAVEAT: chemia & biologia are still ranked vs ALL national extended-level "
+          "takers (the")
+    print("  third subject is med-pool-corrected). chem/bio-R are already med-heavy, so "
+          "the residual")
+    print("  flattery is smaller than the raw-national third subject was — but non-zero.")
     if is_real:
         print(f"  Using OFFICIAL 2026 stanine data ({a.data2026}); no cohort model applied.")
     else:

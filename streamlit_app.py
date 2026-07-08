@@ -13,8 +13,8 @@ import sys, pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import numpy as np, pandas as pd, streamlit as st
 
-from cke_data import load_2025, load_year, STANINE_BANDS
-from wum import Candidate, analyse_year, build_2026, project_cutoff
+from cke_data import load_2025, load_year, STANINE_BANDS, THIRD_MEDPOOL_GAP
+from wum import Candidate, analyse_year, build_2026, project_cutoff, wum_corr
 
 
 def _find_bundled_2026():
@@ -64,7 +64,7 @@ with st.sidebar:
         real_src_note = "uploaded 2026 JSON"
     elif use_real and bundled_2026 is not None:
         d2026 = load_year(bundled_2026)
-        real_src_note = "official CKE 2026 stanines (published 2026-07-08)"
+        real_src_note = "official CKE 2026 centyle curves (published 2026-07-08)"
 
     # model-only inputs (hidden when using real data)
     bio26 = chem26 = third26 = None
@@ -103,32 +103,71 @@ with st.sidebar:
     r_bc = st.slider("corr biologia–chemia", 0.0, 0.95, 0.60, 0.05)
     r_b3 = st.slider(f"corr biologia–{third}", 0.0, 0.95, 0.45, 0.05)
     r_c3 = st.slider(f"corr chemia–{third}", 0.0, 0.95, 0.50, 0.05)
+
+    st.subheader("Copula tail dependence")
+    st.caption("The admission cut-off lives in the top ~3%. A Gaussian copula has ZERO "
+               "upper-tail dependence, so it decouples exactly there; a Student-t copula "
+               "couples joint extremes. Lower ν = heavier joint tails.")
+    gaussian = st.checkbox("Gaussian copula (ν → ∞)", value=False,
+                           help="Old behaviour: zero upper-tail dependence.")
+    nu_val = st.slider("Student-t ν (df)", 3, 40, 6, 1, disabled=gaussian,
+                       help="5–8 is a reasonable default for co-moving exam scores.")
+    nu = None if gaussian else float(nu_val)
+
+    st.subheader("Third subject: rule & reference pool")
+    max_third = st.checkbox("Third slot = max(matematyka, fizyka)", value=True,
+                            help="WUM takes the BETTER of maths or physics. Modelling one "
+                                 "marginal ignores that order-statistic uplift.")
+    medpool = st.checkbox("Med-pool reference for the third subject", value=True,
+                          help="National maths/physics R is dominated by non-med candidates; "
+                               "rank the third subject against bio+chem co-takers instead.")
+    st.caption("National → med-pool mean uplift (pts), interim estimate — replace with "
+               "published admitted-cohort profiles when available.")
+    gap_math = st.slider("matematyka med-pool gap (+pts)", 0, 25,
+                         int(THIRD_MEDPOOL_GAP["matematyka"]), 1, disabled=not medpool)
+    gap_phys = st.slider("fizyka med-pool gap (+pts)", 0, 25,
+                         int(THIRD_MEDPOOL_GAP["fizyka"]), 1, disabled=not medpool)
+    medpool_gap = {"matematyka": float(gap_math), "fizyka": float(gap_phys)}
+
     n_sim = st.select_slider("Monte-Carlo samples", [50_000, 100_000, 200_000, 500_000],
                              value=200_000)
 
 subjects = ["chemia", "biologia", third]
 cand = Candidate(scores={"chemia": chem, "biologia": bio, third: third_val}, year=2026)
-# 3x3 correlation in subject order [chemia, biologia, third]
-corr = np.array([
-    [1.0,  r_bc, r_c3],
-    [r_bc, 1.0,  r_b3],
-    [r_c3, r_b3, 1.0]])
+# Correlation matrix. max_third needs a 4x4 over [chemia, biologia, matematyka, fizyka];
+# otherwise a 3x3 over [chemia, biologia, third].
+if max_third:
+    corr = wum_corr(r_bc, r_b3, r_c3)
+else:
+    corr = np.array([
+        [1.0,  r_bc, r_c3],
+        [r_bc, 1.0,  r_b3],
+        [r_c3, r_b3, 1.0]])
+
+_kw = dict(third=third, corr=corr, n=n_sim, nu=nu, medpool=medpool,
+           max_third=max_third, medpool_gap=medpool_gap)
 
 # ---------------- run both years ------------------------------------------
-an25 = analyse_year(d2025, cand, third=third, corr=corr, pool=pool25, n=n_sim)
+an25 = analyse_year(d2025, cand, pool=pool25, **_kw)
 
 if use_real and d2026 is not None:
-    an26 = analyse_year(d2026, cand, third=third, corr=corr, pool=pool26, n=n_sim)
+    an26 = analyse_year(d2026, cand, pool=pool26, **_kw)
     year_label = "2026 (actual)"
     source_note = f"**Official 2026 CKE results** ({real_src_note})"
 else:
     shifts, _ = build_2026(
         d2025, means_2026={"biologia": bio26, "chemia": chem26, third: third26}, growth=growth)
-    an26 = analyse_year(d2025, cand, third=third, corr=corr, shifts=shifts, pool=pool26, n=n_sim)
+    an26 = analyse_year(d2025, cand, shifts=shifts, pool=pool26, **_kw)
     year_label = "2026 model"
     source_note = (f"**What-if model** (bio {d2025.get('biologia').mean:.0f}→{bio26} "
                    f"{shifts['biologia']:+.0f}, chem {d2025.get('chemia').mean:.0f}→{chem26} "
                    f"{shifts['chemia']:+.0f}, {third} {third_mean25}→{third26} {shifts[third]:+.0f})")
+
+# ---------------- model banner --------------------------------------------
+_cop = "Gaussian copula (ν→∞)" if nu is None else f"Student-t copula (ν={nu:g})"
+_third_rule = "max(matematyka, fizyka)" if max_third else third
+st.caption(f"⚙️ Model: **{_cop}** · third slot **{_third_rule}** · third-subject reference "
+           f"**{'med-pool' if medpool else 'raw national'}**.")
 
 # ---------------- headline ------------------------------------------------
 c1, c2, c3 = st.columns(3)
@@ -153,13 +192,17 @@ st.info(
 if cut2025 > 0:
     proj = project_cutoff(an25, an26, cut_base=cut2025,
                           pool_base=an25.pool, pool_target=an26.pool, seats_growth=seats_growth)
-    st.subheader(f"2026 admission cut-off (próg) — {year_label}")
+    st.subheader("2026 admission cut-off (próg) — estimated")
     k1, k2, k3 = st.columns(3)
     k1.metric("2025 cut-off", f"{proj['cut_base']:.0f}")
-    k2.metric(f"{year_label} cut-off", f"{proj['cut_target']:.0f}", f"{proj['net']:+.0f}")
+    k2.metric("2026 est. cut-off", f"{proj['cut_target']:.0f}", f"{proj['net']:+.0f}",
+              help="A PROJECTION from seats & pool growth — not a published figure. WUM's "
+                   "real 2026 próg is set at recruitment, after applications close.")
     k3.metric("Candidate margin", f"{idx - proj['cut_target']:+.0f}",
               help=f"vs 245 index; 2025 margin was {idx - proj['cut_base']:+.0f}")
     st.caption(
+        f"**Estimated, not actual** — projected by holding seats ~fixed while the pool grows; "
+        f"WUM publishes the real próg only at recruitment. "
         f"Held at ~**{proj['seats']:,.0f}** seats (2025 admit rate {proj['admit_base']*100:.1f}% → "
         f"2026 {proj['admit_target']*100:.1f}% as the pool grows). Two opposing forces: pool "
         f"growth pushes the cut **{proj['pool_effect']:+.0f}**, the weaker field pulls it "
@@ -171,7 +214,8 @@ st.subheader("Candidate per-subject standing")
 rows = []
 for s in subjects:
     st25 = d2025.get(s)
-    row = {"subject": s, "candidate %": cand.scores[s],
+    ref = "med-pool" if (medpool and s == third) else "national"
+    row = {"subject": s, "ref pool": ref, "candidate %": cand.scores[s],
            "%ile 2025": round(an25.candidate_subject_pct[s], 1),
            f"%ile {year_label}": round(an26.candidate_subject_pct[s], 1),
            "2025 mean %": st25.mean}
@@ -184,11 +228,22 @@ for s in subjects:
         row["2026 N (R)"] = d2026.get(s).n
     rows.append(row)
 st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+if medpool:
+    st.caption(
+        f"**Third subject ({third}) is ranked against the MED POOL**, not all national "
+        f"takers. National {third} R is dominated by non-med candidates (engineering, "
+        f"econ, CS), so the raw national percentile overstates a med applicant. Med-pool "
+        f"= national marginal reweighted by +{medpool_gap[third]:.0f} pts of mean. "
+        f"For {third} {third_val}%: national %ile would read "
+        f"**{an25.extras['third_national_pct']:.1f}%** (2025) / "
+        f"**{an26.extras['third_national_pct']:.1f}%** ({year_label}) — the med-pool "
+        f"figures above are materially lower.")
 if d2026 is not None:
     st.caption("Means & N are official CKE 2026 figures (Wstępne informacje EM26, Tabela 2 — "
                "all this-year graduates). Biggest moves: **fizyka −10** (52→42) and "
                "**matematyka +4** (33→37); biologia −5, chemia −2. The percentile/cut-off "
-               "read the stanine curve directly, so the mean column is context, not an input.")
+               "read the published **centyle curve** directly, so the mean column is context, "
+               "not an input.")
 
 # ---------------- index distribution chart --------------------------------
 st.subheader(f"Index distribution: 2025 vs {year_label}")
@@ -202,23 +257,27 @@ st.caption(f"Candidate index = {idx}. 2025 pool mean "
            f"{an25.joint.index_samples.mean():.0f}; {year_label} mean "
            f"{an26.joint.index_samples.mean():.0f} (max 300).")
 
-# ---------------- stanine reference ---------------------------------------
-with st.expander("Official CKE stanine tables (the percentile boundaries we build on)"):
-    st.caption("Each stanine holds a fixed population fraction "
-               f"{tuple(int(b*100) for b in STANINE_BANDS)}%. These ARE the published "
-               "percentile boundaries; the module interpolates the score→percentile curve "
-               "from them — no normal-curve assumption.")
+# ---------------- centyle / stanine reference -----------------------------
+with st.expander("Official CKE percentile data (the curves we build on)"):
+    st.caption("The engine reads each subject's **centyle curve** (skala centylowa) — the "
+               "published score→percentile mapping at ~1-pt resolution — directly, with no "
+               "normal-curve assumption. The 9-band **stanine** table (fractions "
+               f"{tuple(int(b*100) for b in STANINE_BANDS)}%) is the coarser fallback shown "
+               "below for reference.")
     for s in ["chemia", "biologia", "matematyka", "fizyka"]:
         st25 = d2025.get(s)
-        line = (f"**{s}** — 2025 (N={st25.n:,}, mean {st25.mean}%): "
-                f"upper bounds {st25.stanine_upper}")
+        cent = "centyle ✓" if st25.centile else "stanine only"
+        line = (f"**{s}** — 2025 (N={st25.n:,}, mean {st25.mean}%, {cent}): "
+                f"stanine upper bounds {st25.stanine_upper}")
         if d2026 is not None and s in d2026.subjects:
-            line += f"  ·  2026 (N={d2026.get(s).n:,}): upper bounds {d2026.get(s).stanine_upper}"
+            line += f"  ·  2026 (N={d2026.get(s).n:,}): stanine {d2026.get(s).stanine_upper}"
         st.write(line)
 
-foot = ("Using OFFICIAL 2026 stanine curves — the blind forecast (shift-model) was confirmed "
-        "by these actuals." if (use_real and d2026 is not None) else
+foot = ("Using OFFICIAL 2026 centyle curves (fine published percentile data)."
+        if (use_real and d2026 is not None) else
         "2026 here is a what-if model; switch the basis above to official data.")
-st.caption(f"ℹ️ {foot}  ⚠️ Reference pool = ALL national extended-level takers, not the "
-           "self-selected WUM applicant field (stronger) — true med-competition standing is "
-           "somewhat lower. Year-over-year *change* is the robust part.")
+st.caption(f"ℹ️ {foot}  ⚠️ The third subject is med-pool-corrected, but **chemia & biologia "
+           "are still ranked vs ALL national extended-level takers**. chem/bio-R are already "
+           "med-heavy so the residual flattery is smaller than the raw-national third subject "
+           "was — but non-zero; true med-competition standing is somewhat lower still. "
+           "Year-over-year *change* is the robust part.")
