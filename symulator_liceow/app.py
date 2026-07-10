@@ -341,37 +341,58 @@ with tab4:
         "kolejnej preferencji i sam może wypychać innych. Iterujemy do punktu stałego."
     )
 
-    if "runda_idx" not in st.session_state:
-        st.session_state.runda_idx = 1
-
     maks_runda = wynik.liczba_rund
-    st.session_state.runda_idx = min(st.session_state.runda_idx, maks_runda)
+
+    # Jedno źródło prawdy = klucz slidera. Inicjalizacja i przycięcie do
+    # aktualnego zakresu MUSZĄ nastąpić przed utworzeniem widgetów (zmiana
+    # parametrów może zmniejszyć liczbę rund).
+    if "runda_slider" not in st.session_state:
+        st.session_state.runda_slider = 1
+    st.session_state.runda_slider = min(
+        max(1, int(st.session_state.runda_slider)), maks_runda
+    )
+
+    def _poprzednia_runda():
+        st.session_state.runda_slider = max(1, st.session_state.runda_slider - 1)
+
+    def _nastepna_runda():
+        st.session_state.runda_slider = min(
+            maks_runda, st.session_state.runda_slider + 1
+        )
 
     cprev, cslider, cnext = st.columns([1, 6, 1])
     with cprev:
         st.write("")
-        if st.button("◀ Poprzednia", width="stretch"):
-            st.session_state.runda_idx = max(1, st.session_state.runda_idx - 1)
+        st.button(
+            "◀ Poprzednia", width="stretch", on_click=_poprzednia_runda,
+            disabled=st.session_state.runda_slider <= 1,
+        )
     with cnext:
         st.write("")
-        if st.button("Następna ▶", width="stretch"):
-            st.session_state.runda_idx = min(maks_runda, st.session_state.runda_idx + 1)
-    with cslider:
-        st.session_state.runda_idx = st.slider(
-            "Runda", 1, maks_runda, st.session_state.runda_idx, key="runda_slider"
+        st.button(
+            "Następna ▶", width="stretch", on_click=_nastepna_runda,
+            disabled=st.session_state.runda_slider >= maks_runda,
         )
+    with cslider:
+        if maks_runda > 1:
+            # value nie jest podawane — widget czyta stan z klucza runda_slider,
+            # dzięki czemu callbacki przycisków nie są nadpisywane.
+            st.slider("Runda", 1, maks_runda, key="runda_slider")
+        else:
+            st.caption("Algorytm zbiegł w jednej rundzie — brak kolejnych kroków.")
 
-    r_idx = st.session_state.runda_idx - 1
+    numer_rundy = st.session_state.runda_slider
+    r_idx = numer_rundy - 1
     runda = wynik.rundy[r_idx]
 
     m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Runda", f"{st.session_state.runda_idx} / {maks_runda}")
+    m1.metric("Runda", f"{numer_rundy} / {maks_runda}")
     m2.metric("Zgłoszeń w tej rundzie", len(runda.zgloszenia))
     m3.metric("Zakwalifikowani tymczasowo", runda.liczba_zakwalifikowanych)
     m4.metric("Wypchnięci w tej rundzie", runda.liczba_wypchnietych)
 
     if runda.wypchniecia:
-        with st.expander(f"Kto został wypchnięty w rundzie {st.session_state.runda_idx}?", expanded=False):
+        with st.expander(f"Kto został wypchnięty w rundzie {numer_rundy}?", expanded=False):
             kand = {k.id: k for k in miasto.kandydaci}
             wiersze = []
             for w in runda.wypchniecia:
