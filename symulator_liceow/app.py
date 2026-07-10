@@ -73,6 +73,137 @@ def przedmioty_str(o) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Fragment: interaktywna symulacja krok po kroku (zakładka 4)
+#
+# @st.fragment sprawia, że interakcje wewnątrz (nawigacja po rundach, wybór
+# oddziałów do progów, śledzenie kandydata) przeliczają TYLKO ten fragment, a
+# nie całą stronę — bez przerysowywania pozostałych zakładek. Kosztowne
+# obliczenia (generowanie miasta + matching) są i tak zapamiętane w
+# @st.cache_data poza fragmentem, więc oba mechanizmy grają razem.
+# ---------------------------------------------------------------------------
+
+
+@st.fragment
+def symulacja_krok_po_kroku(miasto, wynik):
+    maks_runda = wynik.liczba_rund
+
+    # Jedno źródło prawdy = klucz slidera. Inicjalizacja i przycięcie do
+    # aktualnego zakresu MUSZĄ nastąpić przed utworzeniem widgetów (zmiana
+    # parametrów może zmniejszyć liczbę rund).
+    if "runda_slider" not in st.session_state:
+        st.session_state.runda_slider = 1
+    st.session_state.runda_slider = min(
+        max(1, int(st.session_state.runda_slider)), maks_runda
+    )
+
+    def _poprzednia_runda():
+        st.session_state.runda_slider = max(1, st.session_state.runda_slider - 1)
+
+    def _nastepna_runda():
+        st.session_state.runda_slider = min(
+            maks_runda, st.session_state.runda_slider + 1
+        )
+
+    cprev, cslider, cnext = st.columns([1, 6, 1])
+    with cprev:
+        st.write("")
+        st.button(
+            "◀ Poprzednia", width="stretch", on_click=_poprzednia_runda,
+            disabled=st.session_state.runda_slider <= 1,
+        )
+    with cnext:
+        st.write("")
+        st.button(
+            "Następna ▶", width="stretch", on_click=_nastepna_runda,
+            disabled=st.session_state.runda_slider >= maks_runda,
+        )
+    with cslider:
+        if maks_runda > 1:
+            # value nie jest podawane — widget czyta stan z klucza runda_slider,
+            # dzięki czemu callbacki przycisków nie są nadpisywane.
+            st.slider("Runda", 1, maks_runda, key="runda_slider")
+        else:
+            st.caption("Algorytm zbiegł w jednej rundzie — brak kolejnych kroków.")
+
+    numer_rundy = st.session_state.runda_slider
+    r_idx = numer_rundy - 1
+    runda = wynik.rundy[r_idx]
+
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Runda", f"{numer_rundy} / {maks_runda}")
+    m2.metric("Zgłoszeń w tej rundzie", len(runda.zgloszenia))
+    m3.metric("Zakwalifikowani tymczasowo", runda.liczba_zakwalifikowanych)
+    m4.metric("Wypchnięci w tej rundzie", runda.liczba_wypchnietych)
+
+    if runda.wypchniecia:
+        with st.expander(f"Kto został wypchnięty w rundzie {numer_rundy}?", expanded=False):
+            kand = {k.id: k for k in miasto.kandydaci}
+            wiersze = []
+            for w in runda.wypchniecia:
+                dokad = (
+                    "niezakwalifikowany"
+                    if w.niezakwalifikowany
+                    else (etykieta_oddzialu(miasto, w.spadl_do_oddzialu) if w.spadl_do_oddzialu is not None else "szuka dalej")
+                )
+                wiersze.append(
+                    {
+                        "Kandydat": kand[w.kandydat_id].imie,
+                        "Wypchnięty z": etykieta_oddzialu(miasto, w.z_oddzialu),
+                        "Przez": kand[w.przez_kogo].imie if w.przez_kogo is not None else "—",
+                        "Trafił": dokad,
+                    }
+                )
+            st.dataframe(pd.DataFrame(wiersze), width="stretch", hide_index=True)
+
+    st.subheader("Przepływ kandydatów między numerami preferencji")
+    st.plotly_chart(wykresy.sankey_przeplyw(miasto, wynik, r_idx), width="stretch")
+
+    st.subheader("Ewolucja progów punktowych")
+    st.caption("Wybierz oddziały, których progi chcesz śledzić w czasie działania algorytmu.")
+    opcje_odd = {etykieta_oddzialu(miasto, o.id): o.id for o in miasto.oddzialy}
+    # domyślnie 3 najbardziej oblegane oddziały
+    cnm = kandydaci_na_miejsce(miasto.kandydaci, miasto.oddzialy)
+    domyslne_ids = [oid for oid, _ in sorted(cnm.items(), key=lambda x: x[1], reverse=True)[:3]]
+    domyslne_etyk = [etykieta_oddzialu(miasto, oid) for oid in domyslne_ids]
+    wybrane = st.multiselect(
+        "Oddziały", list(opcje_odd.keys()), default=domyslne_etyk, key="progi_multi"
+    )
+    if wybrane:
+        ids = [opcje_odd[e] for e in wybrane]
+        st.plotly_chart(wykresy.wykres_progow(miasto, wynik, ids), width="stretch")
+    else:
+        st.info("Wybierz co najmniej jeden oddział, aby zobaczyć ewolucję progów.")
+
+    st.subheader("🔍 Śledzenie jednego kandydata")
+    kand_opcje = {k.imie: k.id for k in miasto.kandydaci}
+    wyb_kand = st.selectbox("Kandydat do prześledzenia", list(kand_opcje.keys()), key="sledz_kand")
+    kid = kand_opcje[wyb_kand]
+
+    sciezka = []
+    for i, rnd in enumerate(wynik.rundy, start=1):
+        zgl = next((z for z in rnd.zgloszenia if z.kandydat_id == kid), None)
+        wyp = next((w for w in rnd.wypchniecia if w.kandydat_id == kid), None)
+        stan = rnd.przydzial.get(kid)
+        sciezka.append(
+            {
+                "Runda": i,
+                "Zgłosił się do": etykieta_oddzialu(miasto, zgl.do_oddzialu) + f" ({zgl.numer_preferencji + 1}. wybór)" if zgl else "—",
+                "Wypchnięty?": ("tak, z " + etykieta_oddzialu(miasto, wyp.z_oddzialu)) if wyp else "",
+                "Stan po rundzie": etykieta_oddzialu(miasto, stan) if stan is not None else "wolny / szuka",
+            }
+        )
+    st.dataframe(pd.DataFrame(sciezka), width="stretch", hide_index=True)
+    fin = wynik.przydzial_kandydata(kid)
+    if fin.oddzial_id is not None:
+        st.success(
+            f"Ostatecznie: **{etykieta_oddzialu(miasto, fin.oddzial_id)}** "
+            f"({(fin.numer_preferencji or 0) + 1}. wybór, {fin.punkty:.1f} pkt)."
+        )
+    else:
+        st.error("Ostatecznie: **niezakwalifikowany** (wyczerpał listę preferencji).")
+
+
+# ---------------------------------------------------------------------------
 # Sidebar — parametry symulacji
 # ---------------------------------------------------------------------------
 
@@ -341,123 +472,9 @@ with tab4:
         "kolejnej preferencji i sam może wypychać innych. Iterujemy do punktu stałego."
     )
 
-    maks_runda = wynik.liczba_rund
-
-    # Jedno źródło prawdy = klucz slidera. Inicjalizacja i przycięcie do
-    # aktualnego zakresu MUSZĄ nastąpić przed utworzeniem widgetów (zmiana
-    # parametrów może zmniejszyć liczbę rund).
-    if "runda_slider" not in st.session_state:
-        st.session_state.runda_slider = 1
-    st.session_state.runda_slider = min(
-        max(1, int(st.session_state.runda_slider)), maks_runda
-    )
-
-    def _poprzednia_runda():
-        st.session_state.runda_slider = max(1, st.session_state.runda_slider - 1)
-
-    def _nastepna_runda():
-        st.session_state.runda_slider = min(
-            maks_runda, st.session_state.runda_slider + 1
-        )
-
-    cprev, cslider, cnext = st.columns([1, 6, 1])
-    with cprev:
-        st.write("")
-        st.button(
-            "◀ Poprzednia", width="stretch", on_click=_poprzednia_runda,
-            disabled=st.session_state.runda_slider <= 1,
-        )
-    with cnext:
-        st.write("")
-        st.button(
-            "Następna ▶", width="stretch", on_click=_nastepna_runda,
-            disabled=st.session_state.runda_slider >= maks_runda,
-        )
-    with cslider:
-        if maks_runda > 1:
-            # value nie jest podawane — widget czyta stan z klucza runda_slider,
-            # dzięki czemu callbacki przycisków nie są nadpisywane.
-            st.slider("Runda", 1, maks_runda, key="runda_slider")
-        else:
-            st.caption("Algorytm zbiegł w jednej rundzie — brak kolejnych kroków.")
-
-    numer_rundy = st.session_state.runda_slider
-    r_idx = numer_rundy - 1
-    runda = wynik.rundy[r_idx]
-
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("Runda", f"{numer_rundy} / {maks_runda}")
-    m2.metric("Zgłoszeń w tej rundzie", len(runda.zgloszenia))
-    m3.metric("Zakwalifikowani tymczasowo", runda.liczba_zakwalifikowanych)
-    m4.metric("Wypchnięci w tej rundzie", runda.liczba_wypchnietych)
-
-    if runda.wypchniecia:
-        with st.expander(f"Kto został wypchnięty w rundzie {numer_rundy}?", expanded=False):
-            kand = {k.id: k for k in miasto.kandydaci}
-            wiersze = []
-            for w in runda.wypchniecia:
-                dokad = (
-                    "niezakwalifikowany"
-                    if w.niezakwalifikowany
-                    else (etykieta_oddzialu(miasto, w.spadl_do_oddzialu) if w.spadl_do_oddzialu is not None else "szuka dalej")
-                )
-                wiersze.append(
-                    {
-                        "Kandydat": kand[w.kandydat_id].imie,
-                        "Wypchnięty z": etykieta_oddzialu(miasto, w.z_oddzialu),
-                        "Przez": kand[w.przez_kogo].imie if w.przez_kogo is not None else "—",
-                        "Trafił": dokad,
-                    }
-                )
-            st.dataframe(pd.DataFrame(wiersze), width="stretch", hide_index=True)
-
-    st.subheader("Przepływ kandydatów między numerami preferencji")
-    st.plotly_chart(wykresy.sankey_przeplyw(miasto, wynik, r_idx), width="stretch")
-
-    st.subheader("Ewolucja progów punktowych")
-    st.caption("Wybierz oddziały, których progi chcesz śledzić w czasie działania algorytmu.")
-    opcje_odd = {etykieta_oddzialu(miasto, o.id): o.id for o in miasto.oddzialy}
-    # domyślnie 3 najbardziej oblegane oddziały
-    cnm = kandydaci_na_miejsce(miasto.kandydaci, miasto.oddzialy)
-    domyslne_ids = [oid for oid, _ in sorted(cnm.items(), key=lambda x: x[1], reverse=True)[:3]]
-    domyslne_etyk = [etykieta_oddzialu(miasto, oid) for oid in domyslne_ids]
-    wybrane = st.multiselect(
-        "Oddziały", list(opcje_odd.keys()), default=domyslne_etyk, key="progi_multi"
-    )
-    if wybrane:
-        ids = [opcje_odd[e] for e in wybrane]
-        st.plotly_chart(wykresy.wykres_progow(miasto, wynik, ids), width="stretch")
-    else:
-        st.info("Wybierz co najmniej jeden oddział, aby zobaczyć ewolucję progów.")
-
-    st.subheader("🔍 Śledzenie jednego kandydata")
-    kand_opcje = {k.imie: k.id for k in miasto.kandydaci}
-    wyb_kand = st.selectbox("Kandydat do prześledzenia", list(kand_opcje.keys()), key="sledz_kand")
-    kid = kand_opcje[wyb_kand]
-    kk = next(k for k in miasto.kandydaci if k.id == kid)
-
-    sciezka = []
-    for i, rnd in enumerate(wynik.rundy, start=1):
-        zgl = next((z for z in rnd.zgloszenia if z.kandydat_id == kid), None)
-        wyp = next((w for w in rnd.wypchniecia if w.kandydat_id == kid), None)
-        stan = rnd.przydzial.get(kid)
-        sciezka.append(
-            {
-                "Runda": i,
-                "Zgłosił się do": etykieta_oddzialu(miasto, zgl.do_oddzialu) + f" ({zgl.numer_preferencji + 1}. wybór)" if zgl else "—",
-                "Wypchnięty?": ("tak, z " + etykieta_oddzialu(miasto, wyp.z_oddzialu)) if wyp else "",
-                "Stan po rundzie": etykieta_oddzialu(miasto, stan) if stan is not None else "wolny / szuka",
-            }
-        )
-    st.dataframe(pd.DataFrame(sciezka), width="stretch", hide_index=True)
-    fin = wynik.przydzial_kandydata(kid)
-    if fin.oddzial_id is not None:
-        st.success(
-            f"Ostatecznie: **{etykieta_oddzialu(miasto, fin.oddzial_id)}** "
-            f"({(fin.numer_preferencji or 0) + 1}. wybór, {fin.punkty:.1f} pkt)."
-        )
-    else:
-        st.error("Ostatecznie: **niezakwalifikowany** (wyczerpał listę preferencji).")
+    # Cała interakcja żyje w @st.fragment — nawigacja po rundach i wybory
+    # przeliczają tylko ten kawałek, bez przerysowywania reszty aplikacji.
+    symulacja_krok_po_kroku(miasto, wynik)
 
 
 # ===========================================================================
